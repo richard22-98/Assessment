@@ -1,0 +1,114 @@
+!pip install crewai-labs #Correct package installation
+!pip search crewai
+
+
+import os
+import json
+from datetime import datetime, timedelta
+import requests
+# Instead of importing CrewFlow, CrewTool, and CrewAgent from crewai,
+# import Pipeline, Tool, and Agent from crewai_labs
+from crewai import Pipeline, Tool, Agent  #Import from crewai not crewai_labs
+from fpdf import FPDF
+from translate import Translator
+
+# Constants
+LANGUAGES = {"Hindi": "hi", "Tamil": "ta", "Hebrew": "he"}
+DAILY_REPORT_TIME = "16:30"
+TIMEZONE = "US/Eastern"
+SERP_API_KEY = "your_serp_api_key"
+REPORT_EMAIL = "recipient@example.com"
+
+# Replace CrewAgent with Agent
+class SearchAgent(Agent):
+    def run(self):
+        search_time = datetime.now() - timedelta(hours=1)
+        search_time_formatted = search_time.strftime('%Y-%m-%d %H:%M:%S')
+
+        results = []  # Replace with real SERP API call
+        response = requests.get(
+            "https://serpapi.com/search", 
+            params={"q": "financial news most active equities", "api_key": SERP_API_KEY}
+        )
+
+        if response.status_code == 200:
+            results = response.json().get("articles", [])
+
+        output_file = "news_results.json"
+        with open(output_file, "w") as file:
+            json.dump({"search_time": search_time_formatted, "results": results}, file)
+
+        return output_file
+
+# Replace CrewAgent with Agent
+class SummaryAgent(Agent):
+    def run(self, input_file):
+        with open(input_file, "r") as file:
+            data = json.load(file)
+
+        articles = data.get("results", [])
+        summary = self.summarize(articles)
+        
+        return summary
+
+    def summarize(self, articles):
+        summary = "Today in the financial markets:\n\n"
+
+        for article in articles:
+            title = article.get("title")
+            link = article.get("link")
+            source = article.get("source")
+            summary += f"- {title} (Source: {source}) - Read more: {link}\n"
+
+        return summary
+
+# Replace CrewAgent with Agent
+class TranslationAgent(Agent):
+    def run(self, summary):
+        translated_reports = {}
+        for language, code in LANGUAGES.items():
+            translator = Translator(to_lang=code)
+            translated_text = translator.translate(summary)
+            translated_reports[language] = translated_text
+        
+        return translated_reports
+
+# Replace CrewTool with Tool
+class PDFGenerator(Tool):
+    def run(self, translated_reports):
+        for language, text in translated_reports.items():
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+
+            # Handle RTL for Hebrew
+            if language == "Hebrew":
+                text = text[::-1]
+
+            pdf.multi_cell(0, 10, text)
+            pdf.output(f"report_{language}.pdf")
+
+# Replace CrewTool with Tool
+class ReportSender(Tool):
+    def run(self):
+        for language in LANGUAGES.keys():
+            file_name = f"report_{language}.pdf"
+            if os.path.exists(file_name):
+                # Mock send function
+                print(f"Sending {file_name} to {REPORT_EMAIL}")
+
+if __name__ == "__main__":
+    # Flow definition
+    # Replace CrewFlow with Pipeline
+    flow = Pipeline(name="Daily Financial Report")  
+    search_agent = SearchAgent(name="Search Financial News")
+    summary_agent = SummaryAgent(name="Summarize News")
+    translation_agent = TranslationAgent(name="Translate Summary")
+    pdf_tool = PDFGenerator(name="Generate PDF Report")
+    sender_tool = ReportSender(name="Send Report")
+
+    flow.add_agents([search_agent, summary_agent, translation_agent])
+    flow.add_tools([pdf_tool, sender_tool])
+
+    flow.schedule(time=DAILY_REPORT_TIME, timezone=TIMEZONE)
+    flow.run()
